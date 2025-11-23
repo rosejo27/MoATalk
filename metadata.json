@@ -1,0 +1,7 @@
+{
+  "name": "MoATalk",
+  "description": "An application that crawls the latest news articles on a user-inputted issue, summarizes them into 3-5 key points, and provides related links and text-to-speech functionality.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
