@@ -1,5 +1,4 @@
-
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import useSpeechRecognition from '../hooks/useSpeechRecognition';
 import { MicIcon } from '../constants';
 
@@ -10,7 +9,24 @@ interface SearchBarProps {
   setSearchQuery: (query: string) => void;
 }
 
-const SearchBar: React.FC<SearchBarProps> = ({ onSearch, isLoading, searchQuery, setSearchQuery }) => {
+// 디바운스 함수
+function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout;
+  return (...args: Parameters<T>) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
+}
+
+const SearchBar: React.FC<SearchBarProps> = ({ 
+  onSearch, 
+  isLoading, 
+  searchQuery, 
+  setSearchQuery 
+}) => {
   const {
     isListening,
     transcript,
@@ -19,23 +35,28 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, isLoading, searchQuery,
     isSupported
   } = useSpeechRecognition();
 
+  // 음성 입력용 디바운스된 검색 (타이핑보다 긴 대기시간)
+  const debouncedVoiceSearch = useMemo(
+    () => debounce((text: string) => {
+      if (text.trim()) {
+        onSearch(text);
+      }
+    }, 1000), // 1초 대기 (음성 입력이 완전히 끝난 후 검색)
+    [onSearch]
+  );
+
   useEffect(() => {
     if (transcript) {
       setSearchQuery(transcript);
-      onSearch(transcript);
+      debouncedVoiceSearch(transcript);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transcript]);
-  
-  useEffect(() => {
-    if(!isListening && searchQuery){
-        // Do nothing, let user trigger search manually after editing
-    }
-  }, [isListening, onSearch, searchQuery]);
+  }, [transcript, setSearchQuery, debouncedVoiceSearch]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSearch(searchQuery);
+    if (searchQuery.trim()) {
+      onSearch(searchQuery);
+    }
   };
 
   const handleMicClick = () => {
@@ -52,7 +73,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, isLoading, searchQuery,
         type="text"
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
-        onFocus={() => setSearchQuery('')} // Search bar clears on click/focus
+        onFocus={() => setSearchQuery('')}
         placeholder="궁금한 뉴스를 검색하세요..."
         className="w-full pl-4 pr-24 py-3 text-lg border-2 border-gray-300 dark:border-gray-600 rounded-full focus:ring-primary focus:border-primary dark:bg-gray-800 transition-all duration-300"
         disabled={isLoading || isListening}
@@ -62,9 +83,14 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, isLoading, searchQuery,
           <button
             type="button"
             onClick={handleMicClick}
-            className={`p-2 rounded-full transition-colors ${isListening ? 'bg-red-500 text-white animate-pulse' : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+            className={`p-2 rounded-full transition-colors ${
+              isListening 
+                ? 'bg-red-500 text-white animate-pulse' 
+                : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'
+            }`}
             disabled={isLoading}
-            aria-label="Search with voice"
+            aria-label="음성으로 검색"
+            title={isListening ? '음성 인식 중...' : '음성으로 검색'}
           >
             <MicIcon className="w-6 h-6" />
           </button>
