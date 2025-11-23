@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Header from './components/Header';
 import SearchBar from './components/SearchBar';
 import ResultsDisplay from './components/ResultsDisplay';
@@ -9,6 +8,18 @@ import { fetchNewsSummary } from './services/geminiService';
 import { type NewsSummary, type AppData } from './types';
 import useSpeechSynthesis from './hooks/useSpeechSynthesis';
 
+// ========== 디바운스 함수 ==========
+function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout;
+  return (...args: Parameters<T>) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
+}
+
 const App: React.FC = () => {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -16,7 +27,6 @@ const App: React.FC = () => {
     }
     return false;
   });
-  // Acts as Master Sound Switch
   const [isSoundOn, setIsSoundOn] = useState<boolean>(true); 
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
 
@@ -25,15 +35,18 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [currentlyPlayingTitle, setCurrentlyPlayingTitle] = useState<string | null>(null);
-  
-  // State to track if we are in "Play All" mode for UI
   const [isAutoPlaying, setIsAutoPlaying] = useState<boolean>(false);
+
+  // ========== 캐싱 시스템 ==========
+  const searchCache = useRef<Map<string, {
+    data: AppData;
+    timestamp: number;
+  }>>(new Map());
+  const CACHE_DURATION = 5 * 60 * 1000; // 5분
 
   const { speak, cancel, isSpeaking } = useSpeechSynthesis();
   const resultsRef = useRef<HTMLDivElement>(null);
   const autoPlayQueue = useRef<NewsSummary[]>([]);
-  
-  // Using a Ref for logic, but syncing with State for UI
   const isAutoPlayingRef = useRef(false);
 
   useEffect(() => {
@@ -44,7 +57,6 @@ const App: React.FC = () => {
     }
   }, [isDarkMode]);
 
-  // Effect: If Sound is turned OFF while speaking, stop immediately.
   useEffect(() => {
     if (!isSoundOn && isSpeaking) {
         cancel();
@@ -55,10 +67,6 @@ const App: React.FC = () => {
     }
   }, [isSoundOn, isSpeaking, cancel]);
 
-  // REMOVED: The useEffect that synced !isSpeaking with currentlyPlayingTitle.
-  // It caused a race condition where state was reset before onstart fired.
-  // We now rely on the onEnd callback of speak() to reset the state safely.
-
   const togglePlaybackSpeed = () => {
     setPlaybackSpeed(prev => {
         if (prev === 1.0) return 1.2;
@@ -68,7 +76,6 @@ const App: React.FC = () => {
   };
 
   const playNextInQueue = useCallback(() => {
-    // If sound is off, stop the queue
     if (!isSoundOn) {
         isAutoPlayingRef.current = false;
         setIsAutoPlaying(false);
@@ -84,18 +91,15 @@ const App: React.FC = () => {
             const numberText = index > 0 && index <= numberWords.length ? `${numberWords[index-1]} 이슈입니다.` : '';
             
             setCurrentlyPlayingTitle(summaryToPlay.title);
-            // If speak fails immediately (e.g. error), the callback runs immediately.
             speak(`${numberText} ${summaryToPlay.title}. ${summaryToPlay.summary}`, playbackSpeed, playNextInQueue, !isSoundOn);
         }
     } else {
-        // Queue finished
         setCurrentlyPlayingTitle(null);
         isAutoPlayingRef.current = false;
         setIsAutoPlaying(false);
     }
   }, [speak, appData?.summaries, isSoundOn, playbackSpeed]);
 
-  // Trigger "Play All"
   const startAutoPlay = useCallback(() => {
     if (!appData || !appData.summaries.length || !isSoundOn) return;
     
@@ -123,7 +127,6 @@ const App: React.FC = () => {
       }
   };
 
-  // Initial Search Auto-play trigger (Only on first load of data)
   useEffect(() => {
     if (appData && appData.summaries.length > 0 && isSoundOn) {
         startAutoPlay();
@@ -134,18 +137,45 @@ const App: React.FC = () => {
       autoPlayQueue.current = [];
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appData]); // Run when appData changes (new search results)
+  }, [appData]);
 
-  const handleSearch = useCallback(async (query: string) => {
+  // ========== 실제 검색 로직 (캐싱 포함) ==========
+  const performSearch = useCallback(async (query: string) => {
     if (!query.trim()) return;
 
+    const normalizedQuery = query.trim().toLowerCase();
+
+    // 1. 캐시 확인
+    const cached = searchCache.current.get(normalizedQuery);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      console.log('✅ 캐시에서 결과 로드:', normalizedQuery);
+      setAppData(cached.data);
+      setIsLoading(false);
+      return;
+    }
+
+    // 2. 캐시 없으면 API 호출
     stopAutoPlay();
     setIsLoading(true);
     setError(null);
     setAppData(null);
 
     try {
+      console.log('🔄 API 호출 중:', normalizedQuery);
       const data = await fetchNewsSummary(query);
+      
+      // 캐시에 저장
+      searchCache.current.set(normalizedQuery, {
+        data,
+        timestamp: Date.now()
+      });
+
+      // 캐시 크기 제한 (최대 20개)
+      if (searchCache.current.size > 20) {
+        const firstKey = searchCache.current.keys().next().value;
+        searchCache.current.delete(firstKey);
+      }
+
       setAppData(data);
     } catch (err) {
       setError('뉴스 정보를 가져오는 데 실패했습니다. 잠시 후 다시 시도해 주세요.');
@@ -155,16 +185,30 @@ const App: React.FC = () => {
     }
   }, [stopAutoPlay]);
 
+  // ========== 디바운스된 검색 함수 ==========
+  const debouncedSearch = useMemo(
+    () => debounce(performSearch, 600),
+    [performSearch]
+  );
+
+  const handleSearch = useCallback((query: string) => {
+    if (!query.trim()) return;
+    
+    // 로딩 상태는 즉시 표시
+    setIsLoading(true);
+    
+    // 실제 검색은 디바운스
+    debouncedSearch(query);
+  }, [debouncedSearch]);
+
   const handleTogglePlay = (summary: NewsSummary) => {
-    if (!isSoundOn) return; // Do nothing if sound is muted
+    if (!isSoundOn) return;
 
     const isCurrentlyPlayingThis = currentlyPlayingTitle === summary.title;
 
-    // If we are currently playing THIS summary in the UI, treat it as a STOP command.
     if (isCurrentlyPlayingThis) {
         cancel();
         setCurrentlyPlayingTitle(null);
-        // Also kill autoplay if it was active
         if (isAutoPlayingRef.current) {
             isAutoPlayingRef.current = false;
             autoPlayQueue.current = [];
@@ -173,8 +217,6 @@ const App: React.FC = () => {
         return;
     }
 
-    // Otherwise, START playing this summary manually
-    // First, stop anything else (including autoplay)
     cancel();
     if (isAutoPlayingRef.current) {
         isAutoPlayingRef.current = false;
@@ -186,7 +228,6 @@ const App: React.FC = () => {
     setCurrentlyPlayingTitle(summary.title);
     
     speak(textToRead, playbackSpeed, () => {
-        // Only reset if we are still the one playing (avoids race conditions)
         setCurrentlyPlayingTitle(prev => prev === summary.title ? null : prev);
     }, !isSoundOn);
   };
