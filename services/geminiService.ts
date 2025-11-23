@@ -1,6 +1,18 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { type AppData, type NewsSummary } from '../types';
+
+/**
+ * 문자열을 안정적인 해시값으로 변환 (간단한 해시 함수)
+ */
+function simpleHash(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash);
+}
 
 /**
  * Fetches and summarizes news articles based on a query using the Gemini API.
@@ -11,7 +23,6 @@ import { type AppData, type NewsSummary } from '../types';
 export const fetchNewsSummary = async (query: string): Promise<AppData> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    // Inject today's date to ensure relevant and valid links
     const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
 
     const prompt = `
@@ -67,7 +78,6 @@ export const fetchNewsSummary = async (query: string): Promise<AppData> => {
         
         const text = response.text || "{}";
         
-        // Robust JSON Extraction: Finds the first '{' and the last '}' to ignore markdown or intro text
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         const jsonStr = jsonMatch ? jsonMatch[0] : "{}";
 
@@ -78,12 +88,15 @@ export const fetchNewsSummary = async (query: string): Promise<AppData> => {
         }
 
         const summaries: NewsSummary[] = rawData.summaries.map((item: any) => {
-            // Simple keywords for fast, reliable images
             const keywords = item.imageKeywords || 'news';
             const encodedPrompt = encodeURIComponent(keywords);
-            const randomSeed = Math.floor(Math.random() * 1000); 
-            // Speed Optimization: Reduced size to 400x300 for thumbnails (faster generation/download)
-            const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=400&height=300&nologo=true&seed=${randomSeed}`;
+            
+            // ========== 개선: 안정적인 시드값으로 이미지 캐싱 가능 ==========
+            // 제목을 기반으로 한 해시값을 시드로 사용 (같은 제목 = 같은 이미지)
+            const stableSeed = simpleHash(item.title + keywords);
+            
+            // 이미지 크기 최적화: 400x300 유지 (빠른 로딩)
+            const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=400&height=300&nologo=true&seed=${stableSeed}`;
 
             const links = Array.isArray(item.relatedArticles) 
                 ? item.relatedArticles
@@ -91,7 +104,6 @@ export const fetchNewsSummary = async (query: string): Promise<AppData> => {
                         if (!article.url || !article.url.startsWith('http')) return false;
                         
                         const url = article.url;
-                        // Blacklist for non-news sites / noise
                         const badDomains = [
                             'namu.wiki', 
                             'wikipedia.org',
@@ -101,7 +113,7 @@ export const fetchNewsSummary = async (query: string): Promise<AppData> => {
                             'twitter.com',
                             'x.com',
                             'tistory.com',
-                            'blog.naver.com' // Prefer actual news sites over blogs
+                            'blog.naver.com'
                         ];
                         
                         if (badDomains.some(domain => url.includes(domain))) return false;
@@ -120,7 +132,7 @@ export const fetchNewsSummary = async (query: string): Promise<AppData> => {
                 imageUrl: imageUrl,
                 links: links
             };
-        }).filter((item: NewsSummary) => item.links.length > 0); // Hide summaries without sources
+        }).filter((item: NewsSummary) => item.links.length > 0);
 
         return {
             summaries: summaries,
