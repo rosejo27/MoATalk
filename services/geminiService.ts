@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { type AppData, type NewsSummary } from '../types';
+import { CATEGORY_IMAGES } from '../constants';
 
 /**
  * 문자열을 안정적인 해시값으로 변환 (간단한 해시 함수)
@@ -22,7 +23,7 @@ function simpleHash(str: string): number {
  */
 export const fetchNewsSummary = async (query: string): Promise<AppData> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
+
     const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
 
     const prompt = `
@@ -43,8 +44,9 @@ export const fetchNewsSummary = async (query: string): Promise<AppData> => {
     3. **VALIDITY**: Prioritize links from major news outlets (Naver News, Yonhap, KBS, MBC, SBS, JTBC) that were published recently (within 24-48 hours if possible).
     4. **CONTENT MATCH**: The 'summary' MUST be based **ONLY** on the content of that specific 'url'.
 
-    **IMAGE PROMPTS**:
-    - Provide exactly **2 simple English nouns** for 'imageKeywords' (e.g., "storm car", "diplomat handshake"). Keep it extremely simple for fast generation.
+    **IMAGE & CATEGORY**:
+    1. **Category**: Classify the news into one of: 'Politics', 'Economy', 'Society', 'World', 'Tech', 'Sports', 'Entertainment', 'Culture'.
+    2. **Image URL**: If the search tool provides a high-quality image URL for the article, include it as 'searchImageUrl'. Otherwise leave empty.
 
     **Output JSON Format:**
     {
@@ -52,7 +54,8 @@ export const fetchNewsSummary = async (query: string): Promise<AppData> => {
         {
           "title": "Clean Korean Headline (No [Exclusive] tags)",
           "summary": "Korean summary (2-3 sentences).",
-          "imageKeywords": "noun1 noun2",
+          "category": "Politics",
+          "searchImageUrl": "https://...",
           "relatedArticles": [
             {
               "headline": "Original Headline",
@@ -75,37 +78,38 @@ export const fetchNewsSummary = async (query: string): Promise<AppData> => {
                 tools: [{ googleSearch: {} }],
             },
         });
-        
+
         const text = response.text || "{}";
-        
+
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         const jsonStr = jsonMatch ? jsonMatch[0] : "{}";
 
         const rawData = JSON.parse(jsonStr);
-        
+
         if (!rawData.summaries || !Array.isArray(rawData.summaries)) {
-             throw new Error("Invalid Data Format");
+            throw new Error("Invalid Data Format");
         }
 
         const summaries: NewsSummary[] = rawData.summaries.map((item: any) => {
-            const keywords = item.imageKeywords || 'news';
-            const encodedPrompt = encodeURIComponent(keywords);
-            
-            // ========== 개선: 안정적인 시드값으로 이미지 캐싱 가능 ==========
-            // 제목을 기반으로 한 해시값을 시드로 사용 (같은 제목 = 같은 이미지)
-            const stableSeed = simpleHash(item.title + keywords);
-            
-            // 이미지 크기 최적화: 400x300 유지 (빠른 로딩)
-            const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=400&height=300&nologo=true&seed=${stableSeed}`;
+            // 이미지 선택 로직:
+            // 1. 검색 결과에 이미지가 있으면 사용 (가장 빠르고 정확함)
+            // 2. 없으면 카테고리별 정적 이미지 사용 (캐싱되어 빠름)
+            let imageUrl = item.searchImageUrl;
 
-            const links = Array.isArray(item.relatedArticles) 
+            if (!imageUrl || imageUrl.length < 10) {
+                const category = item.category || 'Default';
+                // 카테고리가 매칭되지 않으면 Default 사용
+                imageUrl = CATEGORY_IMAGES[category] || CATEGORY_IMAGES['Default'];
+            }
+
+            const links = Array.isArray(item.relatedArticles)
                 ? item.relatedArticles
                     .filter((article: any) => {
                         if (!article.url || !article.url.startsWith('http')) return false;
-                        
+
                         const url = article.url;
                         const badDomains = [
-                            'namu.wiki', 
+                            'namu.wiki',
                             'wikipedia.org',
                             'youtube.com',
                             'facebook.com',
@@ -115,7 +119,7 @@ export const fetchNewsSummary = async (query: string): Promise<AppData> => {
                             'tistory.com',
                             'blog.naver.com'
                         ];
-                        
+
                         if (badDomains.some(domain => url.includes(domain))) return false;
 
                         return true;
