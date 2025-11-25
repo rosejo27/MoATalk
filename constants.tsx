@@ -20,10 +20,10 @@ export const VolumeUpIcon: React.FC<{ className?: string }> = ({ className }) =>
 );
 
 export const VolumeOffIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 14l-4-4m0 4l4-4" />
-    </svg>
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 14l-4-4m0 4l4-4" />
+  </svg>
 );
 
 export const MicIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -45,7 +45,19 @@ export const StopIcon: React.FC<{ className?: string }> = ({ className }) => (
 );
 
 export const ExternalLinkIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-    </svg>
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+  </svg>
 );
+
+export const CATEGORY_IMAGES: Record<string, string> = {
+  'Politics': 'https://image.pollinations.ai/prompt/politics%20news%20press%20conference?width=400&height=300&nologo=true&seed=1001',
+  'Economy': 'https://image.pollinations.ai/prompt/economy%20stock%20market%20finance?width=400&height=300&nologo=true&seed=1002',
+  'Society': 'https://image.pollinations.ai/prompt/society%20city%20people%20korea?width=400&height=300&nologo=true&seed=1003',
+  'World': 'https://image.pollinations.ai/prompt/world%20globe%20international%20news?width=400&height=300&nologo=true&seed=1004',
+  'Tech': 'https://image.pollinations.ai/prompt/technology%20ai%20computer%20future?width=400&height=300&nologo=true&seed=1005',
+  'Sports': 'https://image.pollinations.ai/prompt/sports%20stadium%20game?width=400&height=300&nologo=true&seed=1006',
+  'Entertainment': 'https://image.pollinations.ai/prompt/entertainment%20kpop%20movie%20music?width=400&height=300&nologo=true&seed=1007',
+  'Culture': 'https://image.pollinations.ai/prompt/culture%20art%20museum%20book?width=400&height=300&nologo=true&seed=1008',
+  'Default': 'https://image.pollinations.ai/prompt/news%20newspaper%20breaking?width=400&height=300&nologo=true&seed=1009'
+};
